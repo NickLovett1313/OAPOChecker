@@ -34,17 +34,17 @@ if st.button("🔍 Check for Discrepancies"):
         oa_text = extract_text_from_pdf(oa_file)
         po_text = extract_text_from_pdf(spartan_po_file)
 
-        # Prompt for Mixtral
+        # Build prompt for Mixtral
         prompt = f"""
 You are a strict order checker.
-Compare these two documents line by line for mismatches in:
+Compare these two documents for any discrepancies in:
 - Model Numbers
 - Tags
 - Dates
 - Prices
 - Calibration data
 
-Flag ANY mismatch. Be explicit. Return a clear report.
+Be line-by-line. Flag ANY mismatch. Be explicit.
 
 OA:
 {oa_text[:12000]}
@@ -53,7 +53,7 @@ PO:
 {po_text[:12000]}
 """
 
-        # Call Groq (Mixtral)
+        # Call Groq Mixtral
         response = client.chat.completions.create(
             model="mixtral-8x7b-32768",
             messages=[
