@@ -1,56 +1,66 @@
 import streamlit as st
+import os
 import fitz  # PyMuPDF
-import re
+from groq import Groq
 
-st.set_page_config(page_title="PO vs OA Comparator", layout="wide")
+# Get your Groq API key from Streamlit secrets
+client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
-st.title("📄 PO vs OA Comparator")
-st.write("Upload a Purchase Order and an Order Acknowledgement PDF to compare them for discrepancies.")
+st.set_page_config(page_title="Spartan Order Checker", page_icon="🧾")
+st.title("🧾 Spartan Order Checker")
+st.markdown("Upload your documents below and let AI check for discrepancies.")
 
-uploaded_po = st.file_uploader("Upload Purchase Order (PO)", type=["pdf"], key="po")
-uploaded_oa = st.file_uploader("Upload Order Acknowledgement (OA)", type=["pdf"], key="oa")
+# Uploads
+oa_file = st.file_uploader("📎 Upload Factory Order Acknowledgement", type=["pdf"])
+spartan_po_file = st.file_uploader("📎 Upload Spartan Purchase Order", type=["pdf"])
 
+# Extract PDF text
 def extract_text_from_pdf(file):
-    doc = fitz.open(stream=file.read(), filetype="pdf")
+    if file is None:
+        return ""
     text = ""
-    for page in doc:
-        text += page.get_text()
+    with fitz.open(stream=file.read(), filetype="pdf") as doc:
+        for page in doc:
+            text += page.get_text()
     return text
 
-def find_lines(text):
-    pattern = re.compile(r"(\d{5})\s+(.*?)\s+(\d+\.\d{2})\s+(\d+\.\d{2})\s+(\d{2,4}-[A-Za-z]{3}-\d{4}|[A-Za-z]{3} \d{1,2}, \d{4})", re.MULTILINE)
-    return pattern.findall(text)
-
-if uploaded_po and uploaded_oa:
-    po_text = extract_text_from_pdf(uploaded_po)
-    oa_text = extract_text_from_pdf(uploaded_oa)
-
-    po_lines = find_lines(po_text)
-    oa_lines = find_lines(oa_text)
-
-    st.subheader("🔍 Discrepancy Report")
-
-    if not po_lines or not oa_lines:
-        st.warning("Could not extract line items from one or both documents. Please ensure they follow a consistent format.")
+if st.button("🔍 Check for Discrepancies"):
+    if not oa_file or not spartan_po_file:
+        st.error("Please upload at least the OA and Spartan PO.")
     else:
-        for po_line in po_lines:
-            po_id, po_model, po_price, po_total, po_date = po_line
-            match_found = False
-            for oa_line in oa_lines:
-                oa_id, oa_model, oa_price, oa_total, oa_date = oa_line
-                if po_id == oa_id:
-                    match_found = True
-                    issues = []
-                    if po_model.strip() != oa_model.strip():
-                        issues.append("Model mismatch")
-                    if po_price != oa_price:
-                        issues.append("Unit price mismatch")
-                    if po_total != oa_total:
-                        issues.append("Total price mismatch")
-                    if po_date != oa_date:
-                        issues.append("Ship date mismatch")
-                    if issues:
-                        st.error(f"Line {po_id}: " + ", ".join(issues))
-                    break
-            if not match_found:
-                st.warning(f"Line {po_id} not found in OA.")
+        st.info("🔄 Extracting and analyzing...")
+
+        # Extract text
+        oa_text = extract_text_from_pdf(oa_file)
+        po_text = extract_text_from_pdf(spartan_po_file)
+
+        # Prompt for Mixtral
+        prompt = f"""
+You are a strict order checker.
+Compare these two documents line by line for mismatches in:
+- Model Numbers
+- Tags
+- Dates
+- Prices
+- Calibration data
+
+Flag ANY mismatch. Be explicit. Return a clear report.
+
+OA:
+{oa_text[:12000]}
+
+PO:
+{po_text[:12000]}
+"""
+
+        # Call Groq (Mixtral)
+        response = client.chat.completions.create(
+            model="mixtral-8x7b-32768",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        st.success("✅ Check Complete")
+        st.markdown(response.choices[0].message.content)
